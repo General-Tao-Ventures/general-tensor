@@ -47,7 +47,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const tao = data?.data?.TAO;
     const usd = tao?.quote?.USD;
 
-    if (!usd) {
+    const price = usd?.price;
+    const change = usd?.percent_change_24h;
+
+    if (!usd || !Number.isFinite(price) || !Number.isFinite(change)) {
       console.error("Invalid CMC response", data?.status ?? data);
       if (lastGoodPayload) {
         res.setHeader(
@@ -59,9 +62,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       res.setHeader("Cache-Control", "no-store");
       return res.status(500).json({ error: "Invalid CMC response" });
     }
-
-    const price = usd.price;
-    const change = usd.percent_change_24h;
 
     const priceFormatted = `$${price.toLocaleString(undefined, {
       minimumFractionDigits: 2,
