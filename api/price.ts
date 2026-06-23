@@ -20,10 +20,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  res.setHeader(
-    "Cache-Control",
-    "s-maxage=300, stale-while-revalidate=600"
-  );
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
@@ -31,6 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const apiKey = process.env.CMC_API_KEY;
   if (!apiKey) {
+    res.setHeader("Cache-Control", "no-store");
     return res.status(500).json({ error: "Missing CMC_API_KEY" });
   }
 
@@ -53,8 +50,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!usd) {
       console.error("Invalid CMC response", data?.status ?? data);
       if (lastGoodPayload) {
+        res.setHeader(
+          "Cache-Control",
+          "s-maxage=300, stale-while-revalidate=600"
+        );
         return res.status(200).json({ ...lastGoodPayload, stale: true });
       }
+      res.setHeader("Cache-Control", "no-store");
       return res.status(500).json({ error: "Invalid CMC response" });
     }
 
@@ -81,12 +83,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     lastGoodPayload = payload;
 
+    res.setHeader(
+      "Cache-Control",
+      "s-maxage=300, stale-while-revalidate=600"
+    );
     return res.status(200).json(payload);
   } catch (error) {
     console.error(error);
     if (lastGoodPayload) {
+      res.setHeader(
+        "Cache-Control",
+        "s-maxage=300, stale-while-revalidate=600"
+      );
       return res.status(200).json({ ...lastGoodPayload, stale: true });
     }
+    res.setHeader("Cache-Control", "no-store");
     return res.status(500).json({ error: "Failed to fetch TAO data" });
   }
 }
