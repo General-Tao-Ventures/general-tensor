@@ -3,8 +3,12 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 const allowedOrigins = [
   "https://general-tensor.webflow.io",
   "https://generaltensor.io",
-  "https://www.generaltensor.io", 
+  "https://www.generaltensor.io",
 ];
+
+// Survives across invocations on the same warm Lambda instance. Lets us
+// serve the last good response if CMC errors out (e.g. credit limit hit).
+let lastGoodPayload: Record<string, unknown> | null = null;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = req.headers.origin;
@@ -16,6 +20,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader(
+    "Cache-Control",
+    "s-maxage=300, stale-while-revalidate=600"
+  );
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
@@ -43,6 +51,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const usd = tao?.quote?.USD;
 
     if (!usd) {
+      console.error("Invalid CMC response", data?.status ?? data);
+      if (lastGoodPayload) {
+        return res.status(200).json({ ...lastGoodPayload, stale: true });
+      }
       return res.status(500).json({ error: "Invalid CMC response" });
     }
 
@@ -56,7 +68,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const changeFormatted = `${change >= 0 ? "+" : ""}${change.toFixed(1)}%`;
 
-    return res.status(200).json({
+    const payload = {
       name: tao.name,
       symbol: tao.symbol,
       price: priceFormatted,
@@ -65,9 +77,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       price_raw: price,
       change_24h_raw: change,
       last_updated: usd.last_updated,
-    });
+    };
+
+    lastGoodPayload = payload;
+
+    return res.status(200).json(payload);
   } catch (error) {
     console.error(error);
+    if (lastGoodPayload) {
+      return res.status(200).json({ ...lastGoodPayload, stale: true });
+    }
     return res.status(500).json({ error: "Failed to fetch TAO data" });
   }
 }
